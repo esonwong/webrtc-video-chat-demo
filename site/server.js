@@ -52,3 +52,5 @@ webRTC.rtc.on('chat_msg', function(data, socket) {
     }
   }
 });
+
+module.exports = app;
