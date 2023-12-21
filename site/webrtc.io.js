@@ -1,40 +1,3 @@
-//CLIENT
-
-// Fallbacks for vendor-specific variables until the spec is finalized.
-
-var PeerConnection = (window.PeerConnection || window.webkitPeerConnection00 || window.webkitRTCPeerConnection || window.mozRTCPeerConnection);
-var URL = (window.URL || window.webkitURL || window.msURL || window.oURL);
-var nativeRTCIceCandidate = (window.mozRTCIceCandidate || window.RTCIceCandidate);
-var nativeRTCSessionDescription = (window.mozRTCSessionDescription || window.RTCSessionDescription); // order is very important: "RTCSessionDescription" defined in Nighly but useless
-
-var sdpConstraints = {
-  'mandatory': {
-    'OfferToReceiveAudio': true,
-    'OfferToReceiveVideo': true
-  }
-};
-
-if (navigator.webkitGetUserMedia) {
-  if (!webkitMediaStream.prototype.getVideoTracks) {
-    webkitMediaStream.prototype.getVideoTracks = function () {
-      return this.videoTracks;
-    };
-    webkitMediaStream.prototype.getAudioTracks = function () {
-      return this.audioTracks;
-    };
-  }
-
-  // New syntax of getXXXStreams method in M26.
-  if (!webkitRTCPeerConnection.prototype.getLocalStreams) {
-    webkitRTCPeerConnection.prototype.getLocalStreams = function () {
-      return this.localStreams;
-    };
-    webkitRTCPeerConnection.prototype.getRemoteStreams = function () {
-      return this.remoteStreams;
-    };
-  }
-}
-
 (function () {
 
   var rtc;
@@ -74,13 +37,6 @@ if (navigator.webkitGetUserMedia) {
 
   // Holds the STUN/ICE server to use for PeerConnections.
   rtc.SERVER = function () {
-    if (navigator.mozGetUserMedia) {
-      return {
-        "iceServers": [{
-          "urls": "stun:23.21.150.121"
-        }]
-      };
-    }
     return {
       "iceServers": [{
         "urls": "stun:stun.l.google.com:19302"
@@ -155,7 +111,7 @@ if (navigator.webkitGetUserMedia) {
 
       rtc._socket.onmessage = function (msg) {
         var json = JSON.parse(msg.data);
-        console.log('socket receive message', json);
+        // console.log('socket receive message', json);
         rtc.fire(json.eventName, json.data);
       };
 
@@ -178,7 +134,7 @@ if (navigator.webkitGetUserMedia) {
       });
 
       rtc.on('receive_ice_candidate', function (data) {
-        var candidate = new nativeRTCIceCandidate(data.candidate);
+        var candidate = new RTCIceCandidate(data.candidate);
         rtc.peerConnections[data.socketId].addIceCandidate(candidate);
         rtc.fire('receive ice candidate', candidate);
       });
@@ -188,13 +144,9 @@ if (navigator.webkitGetUserMedia) {
 
         rtc.connections.push(data.socketId);
 
-        var pc = rtc.createPeerConnection(data.socketId);
-        for (var i = 0; i < rtc.streams.length; i++) {
-          var stream = rtc.streams[i];
-          stream.getTracks().forEach((track) => {
-            pc.addTrack(track, stream);
-          });
-        }
+        let pc = rtc.createPeerConnection(data.socketId);
+
+        rtc.addStream(pc);
       });
 
       rtc.on('remove_peer_connected', function (data) {
@@ -244,10 +196,9 @@ if (navigator.webkitGetUserMedia) {
     if (rtc.dataChannelSupport) config = rtc.dataChannelConfig;
 
     var pc = rtc.peerConnections[id] = new PeerConnection(rtc.SERVER(), config);
-    pc.onicecandidate = function (event) {
 
-      console.log('onicecandidate', event);
-
+    pc.addEventListener('icecandidate', (event) => {
+    // console.log('icecandidate event', event);
       if (event.candidate) {
         rtc._socket.send(JSON.stringify({
           "eventName": "send_ice_candidate",
@@ -259,10 +210,10 @@ if (navigator.webkitGetUserMedia) {
         }));
       }
       rtc.fire('ice candidate', event.candidate);
-    };
+    });
 
     pc.addEventListener("connectionstatechange", (event) => {
-      console.log('connectionstatechange event', event);
+      // console.log('connectionstatechange event', event);
       console.log('pc.connectionState', pc.connectionState);
 
       if (pc.connectionState === "connected") {
@@ -279,16 +230,16 @@ if (navigator.webkitGetUserMedia) {
       rtc.fire('add remote track', event.streams, id);
     });
 
-    pc.addEventListener("iceconnectionstatechange", (event) => {
-      console.log('iceconnectionstatechange event', event);
-    });
+    // pc.addEventListener("iceconnectionstatechange", (event) => {
+    //   console.log('iceconnectionstatechange event', event);
+    // });
 
     // pc.addEventListener("error", (event) => {
     //   console.log('error event', event);
     // })
-    pc.addEventListener("negotiationneeded", (event) => {
-      console.log('negotiationneeded event', event);
-    })
+    // pc.addEventListener("negotiationneeded", (event) => {
+    //   console.log('negotiationneeded event', event);
+    // })
 
 
 
@@ -308,62 +259,37 @@ if (navigator.webkitGetUserMedia) {
   };
 
   rtc.sendOffer = async function (socketId) {
-    console.log('send Offer');
     var pc = rtc.peerConnections[socketId];
 
-    var constraints = {
-      "optional": [],
-      "mandatory": {
-        "MozDontOfferDataChannel": true
+    const offer = await pc.createOffer();
+    pc.setLocalDescription(offer);
+
+    console.log('sending offer to ' + socketId, offer);
+    rtc._socket.send(JSON.stringify({
+      "eventName": "send_offer",
+      "data": {
+        "socketId": socketId,
+        "sdp": offer
       }
-    };
-    // temporary measure to remove Moz* constraints in Chrome
-    if (navigator.webkitGetUserMedia) {
-      for (var prop in constraints.mandatory) {
-        if (prop.indexOf("Moz") != -1) {
-          delete constraints.mandatory[prop];
-        }
-      }
-    }
-    constraints = mergeConstraints(constraints, sdpConstraints);
-    pc.createOffer(sdpConstraints).then(function (session_description) {
-      session_description.sdp = preferOpus(session_description.sdp);
-      pc.setLocalDescription(session_description);
-      console.log('sending offer to ' + socketId, session_description);
-      rtc._socket.send(JSON.stringify({
-        "eventName": "send_offer",
-        "data": {
-          "socketId": socketId,
-          "sdp": session_description
-        }
-      }));
-    }).catch(function (error) {
-      console.error(error);
-    });
+    }));
   };
 
   rtc.receiveOffer = function (socketId, sdp) {
-    var pc = rtc.peerConnections[socketId];
+    console.log('receive Offer', socketId, sdp);
+
+    let pc = rtc.peerConnections[socketId];
+    pc.setRemoteDescription(new RTCSessionDescription(sdp));
     rtc.sendAnswer(socketId, sdp);
   };
 
   rtc.sendAnswer = async function (socketId, sdp) {
     console.log('sending Answer to ' + socketId);
-    var pc = rtc.peerConnections[socketId];
-    pc.setRemoteDescription(new nativeRTCSessionDescription(sdp));
-    // pc.createAnswer(function (session_description) {
-    //   pc.setLocalDescription(session_description);
-    //   rtc._socket.send(JSON.stringify({
-    //     "eventName": "send_answer",
-    //     "data": {
-    //       "socketId": socketId,
-    //       "sdp": session_description
-    //     }
-    //   }));
-    //   //TODO Unused variable!?
-    //   var offer = pc.remoteDescription;
-    // }, null, sdpConstraints);
-    const answer = await pc.createAnswer(sdpConstraints);
+
+    let pc = rtc.peerConnections[socketId];
+
+
+
+    const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
     rtc._socket.send(JSON.stringify({
       "eventName": "send_answer",
@@ -376,24 +302,20 @@ if (navigator.webkitGetUserMedia) {
 
 
   rtc.receiveAnswer = function (socketId, sdp) {
+    console.log('receive Answer', socketId, sdp);
+
     var pc = rtc.peerConnections[socketId];
-    pc.setRemoteDescription(new nativeRTCSessionDescription(sdp));
+    pc.setRemoteDescription(new RTCSessionDescription(sdp));
   };
 
 
   rtc.createStream = function (opt, onSuccess, onFail) {
-    var options;
     onSuccess = onSuccess || function () { };
     onFail = onFail || function () { };
 
-    options = {
-      video: !!opt.video,
-      audio: !!opt.audio
-    };
-
     if (navigator.mediaDevices.getUserMedia) {
       rtc.numStreams++;
-      navigator.mediaDevices.getUserMedia(options).then(function (stream) {
+      navigator.mediaDevices.getUserMedia(opt).then(function (stream) {
         rtc.streams.push(stream);
         rtc.initializedStreams++;
         onSuccess(stream);
@@ -402,6 +324,7 @@ if (navigator.webkitGetUserMedia) {
         }
       })
         .catch(function (error) {
+          rtc.fire('ready');
           console.log(error.name + ": " + error.message);
           onFail();
         })
@@ -411,14 +334,18 @@ if (navigator.webkitGetUserMedia) {
     }
   };
 
-  rtc.addStreams = function () {
+  rtc.addStream = function (pc) {
     for (var i = 0; i < rtc.streams.length; i++) {
       var stream = rtc.streams[i];
-      for (var connection in rtc.peerConnections) {
-        stream.getTracks().forEach((track) => {
-          rtc.peerConnections[connection].addTrack(track, stream);
-        });
-      }
+      stream.getTracks().forEach((track) => {
+        pc.addTrack(track, stream);
+      });
+    }
+  }
+
+  rtc.addStreams = function () {
+    for (var connection in rtc.peerConnections) {
+      rtc.addStream(rtc.peerConnections[connection]);
     }
   };
 
@@ -524,77 +451,3 @@ if (navigator.webkitGetUserMedia) {
   });
 
 }).call(this);
-
-function preferOpus(sdp) {
-  var sdpLines = sdp.split('\r\n');
-  var mLineIndex = null;
-  // Search for m line.
-  for (var i = 0; i < sdpLines.length; i++) {
-    if (sdpLines[i].search('m=audio') !== -1) {
-      mLineIndex = i;
-      break;
-    }
-  }
-  if (mLineIndex === null) return sdp;
-
-  // If Opus is available, set it as the default in m line.
-  for (var j = 0; j < sdpLines.length; j++) {
-    if (sdpLines[j].search('opus/48000') !== -1) {
-      var opusPayload = extractSdp(sdpLines[j], /:(\d+) opus\/48000/i);
-      if (opusPayload) sdpLines[mLineIndex] = setDefaultCodec(sdpLines[mLineIndex], opusPayload);
-      break;
-    }
-  }
-
-  // Remove CN in m line and sdp.
-  sdpLines = removeCN(sdpLines, mLineIndex);
-
-  sdp = sdpLines.join('\r\n');
-  return sdp;
-}
-
-function extractSdp(sdpLine, pattern) {
-  var result = sdpLine.match(pattern);
-  return (result && result.length == 2) ? result[1] : null;
-}
-
-function setDefaultCodec(mLine, payload) {
-  var elements = mLine.split(' ');
-  var newLine = [];
-  var index = 0;
-  for (var i = 0; i < elements.length; i++) {
-    if (index === 3) // Format of media starts from the fourth.
-      newLine[index++] = payload; // Put target payload to the first.
-    if (elements[i] !== payload) newLine[index++] = elements[i];
-  }
-  return newLine.join(' ');
-}
-
-function removeCN(sdpLines, mLineIndex) {
-  var mLineElements = sdpLines[mLineIndex].split(' ');
-  // Scan from end for the convenience of removing an item.
-  for (var i = sdpLines.length - 1; i >= 0; i--) {
-    var payload = extractSdp(sdpLines[i], /a=rtpmap:(\d+) CN\/\d+/i);
-    if (payload) {
-      var cnPos = mLineElements.indexOf(payload);
-      if (cnPos !== -1) {
-        // Remove CN payload from m line.
-        mLineElements.splice(cnPos, 1);
-      }
-      // Remove CN line in sdp
-      sdpLines.splice(i, 1);
-    }
-  }
-
-  sdpLines[mLineIndex] = mLineElements.join(' ');
-  return sdpLines;
-}
-
-function mergeConstraints(cons1, cons2) {
-  var merged = cons1;
-  for (var name in cons2.mandatory) {
-    merged.mandatory[name] = cons2.mandatory[name];
-  }
-  merged.optional.concat(cons2.optional);
-  return merged;
-}

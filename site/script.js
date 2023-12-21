@@ -201,6 +201,7 @@ function init() {
     if (document.getElementById('remote' + socketId)) return;
     var clone = cloneVideo('you', socketId);
     document.getElementById(clone.id).setAttribute("class", "");
+    clone.setAttribute("muted", false);
     rtc.attachStream(streams[0], clone.id);
 
     subdivideVideos();
