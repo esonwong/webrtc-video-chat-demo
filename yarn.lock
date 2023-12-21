@@ -122,11 +122,6 @@ send@0.1.0:
     mime "1.2.6"
     range-parser "0.0.4"
 
-webrtc.io-client@latest:
-  version "0.0.2-3"
-  resolved "https://registry.yarnpkg.com/webrtc.io-client/-/webrtc.io-client-0.0.2-3.tgz#418ba973b3bb0f3ab153829c41457079aa639a50"
-  integrity sha512-UTOQxKMjuexloQ8aTSo1PVDgJTls03WN/SdkAS/oU4s1cPsEe0N00lK4alQUVhNinyoeRes2wjuU2yN9EFjb3Q==
-
 webrtc.io@latest:
   version "0.0.4"
   resolved "https://registry.yarnpkg.com/webrtc.io/-/webrtc.io-0.0.4.tgz#3a9ba53353ce7b42cd4708b0fe7e20300e41cdf9"
