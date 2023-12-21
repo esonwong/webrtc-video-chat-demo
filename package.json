@@ -13,7 +13,7 @@
   },
   "subdomain": "MultiWebRTC",
   "scripts": {
-    "start": "example/server.js"
+    "start": "node site/server.js"
   },
   "author": "Ben Brittain",
   "contributors": [

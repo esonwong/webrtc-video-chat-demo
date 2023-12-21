@@ -180,7 +180,7 @@ function init() {
       "video": {"mandatory": {}, "optional": []},
       "audio": true
     }, function(stream) {
-      document.getElementById('you').src = URL.createObjectURL(stream);
+      document.getElementById('you').srcObject = stream;
       document.getElementById('you').play();
       //videos.push(document.getElementById('you'));
       //rtc.attachStream(stream, 'you');
@@ -193,13 +193,16 @@ function init() {
 
   var room = window.location.hash.slice(1);
 
-  rtc.connect("ws:" + window.location.href.substring(window.location.protocol.length).split('#')[0], room);
+  rtc.connect(`${window.location.protocol === "https:" ? 'wss:' : 'ws:'}//${window.location.href.substring(window.location.protocol.length).split('#')[0]}`, room);
 
-  rtc.on('add remote stream', function(stream, socketId) {
-    console.log("ADDING REMOTE STREAM...");
+  rtc.on('add remote track', function (streams, socketId) {
+    console.log("ADDING REMOTE Track...");
+
+    if (document.getElementById('remote' + socketId)) return;
     var clone = cloneVideo('you', socketId);
     document.getElementById(clone.id).setAttribute("class", "");
-    rtc.attachStream(stream, clone.id);
+    rtc.attachStream(streams[0], clone.id);
+
     subdivideVideos();
   });
   rtc.on('disconnect stream', function(data) {
